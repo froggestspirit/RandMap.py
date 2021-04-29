@@ -1,9 +1,11 @@
+#!/usr/bin/python3
+
 import random as rand
 import os, sys, math, pygame
 from pygame.locals import *
 
 WINSIZE = [120, 120]
-WINSIZESCALE = [480, 480]
+WINSIZESCALE = [960, 960]
 
 def read_input():
     for e in pygame.event.get():
@@ -13,6 +15,19 @@ def read_input():
         if (e.type == KEYUP and e.key == K_LEFT):
             return True
             break
+
+def fill_rect(tile, x, y, w, h):
+    if x + w < x:
+        x = x + w
+        w = abs(w)
+    if y + h < y:
+        y = y + h
+        h = abs(h)
+    for yi in range(h):
+        yCoord = y + yi
+        for xi in range(w):
+            xCoord = x + xi
+            mapData[(yCoord * width) + xCoord] = tile
 
 clock = pygame.time.Clock()
 #initialize and prepare screen
@@ -31,14 +46,14 @@ while not mainDone:
     #Map size
     width = rand.randint(15,60) * 2
     height = rand.randint(15,60) * 2
-    size =  (width + 15) * (height + 14)
+    size = (width + 15) * (height + 14)
     #Enforce maximum size
     while size >= 0x2800:
         if height >= width:
             height -= 2;
         else:
             width -= 2;
-        size = (height + 14) * (width + 15)
+        size = (width + 15) * (height + 14)
 
 
     #Map type, exits, should be defined beforehand
@@ -50,13 +65,15 @@ while not mainDone:
     bit = 1
     for i in range(4):
         if mapType & bit:
-            exitPos[i] = rand.randint(MARGIN_SIZE, mapDim[i] - MARGIN_SIZE)
-            exitSize[i] = rand.randint(4, mapDim[i] - (MARGIN_SIZE * 2))
-            if (exitPos[i] + (exitSize[i] - 1)) > (mapDim[i] - MARGIN_SIZE):
-                exitPos[i] -= (exitPos[i] + (exitSize[i] - 1)) - (mapDim[i] - MARGIN_SIZE)
+            exitPos[i] = (rand.randint(0, int(mapDim[i] / 2) - MARGIN_SIZE) * 2) + MARGIN_SIZE
+            exitSize[i] = rand.randint(2, 5) * 2
+            if (exitPos[i] + (exitSize[i] - 1)) >= (mapDim[i] - MARGIN_SIZE):
+                exitPos[i] -= (exitPos[i] + exitSize[i]) - (mapDim[i] - MARGIN_SIZE)
         bit *= 2
-
     print(f"{width} by {height}")
+
+
+    # Create a bare map template
     mapData = []
     for y in range(height):
         for x in range(width):
@@ -96,10 +113,41 @@ while not mainDone:
                 else:
                     mapData.append(1)
 
+
+    # Set focal points for the path
+    # Create one near each exit, and one near the center
+    pathPointCenter = [int(width / 2), int(height / 2)]
+    pathPoint = []
+
+    if exitPos[0] > 0:
+        pathPoint.append([exitPos[0] + int(exitSize[0] / 2), MARGIN_SIZE + 2])
+    if exitPos[1] > 0:
+        pathPoint.append([MARGIN_SIZE + 2, exitPos[1] + int(exitSize[1] / 2)])
+    if exitPos[2] > 0:
+        pathPoint.append([exitPos[2] + int(exitSize[2] / 2), height - (MARGIN_SIZE + 2)])
+    if exitPos[3] > 0:
+        pathPoint.append([width - (MARGIN_SIZE+ 2), exitPos[3] + int(exitSize[3] / 2)])
+
+
+    # Draw the path with the path points
+    for i in pathPoint:
+        dir = rand.randint(0, 1)
+        len = rand.randint(0, abs(pathPointCenter[dir] - i[dir]))
+        xy = [i[0] - 2, i[1] - 2]
+        wh = [4, 4]
+        if(pathPointCenter[dir] < i[dir]):
+            len = -(len + 4)
+            xy[dir] += 4
+        wh[dir] += len 
+        fill_rect(2, xy[0], xy[1], wh[0], wh[1])
+
+
+    # Draw
     for y in range(height):
         for x in range(width):
             buffer[x, y] = color[mapData[(y * width) + x]]
 
+    # Main loop
     done = 0
     while not done:
         pygame.transform.scale(s, WINSIZESCALE, s2)
