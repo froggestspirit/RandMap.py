@@ -4,7 +4,7 @@ import random as rand
 import os, sys, math, pygame
 from pygame.locals import *
 
-WINSIZE = [120, 120]
+WINSIZE = [30, 30]
 WINSIZESCALE = [960, 960]
 
 def read_input():
@@ -16,7 +16,7 @@ def read_input():
             return True
             break
 
-def fill_rect(tile, x, y, w, h):
+def check_rect(tile, x, y, w, h):
     if x + w < x:
         x = x + w
         w = abs(w)
@@ -27,7 +27,29 @@ def fill_rect(tile, x, y, w, h):
         yCoord = y + yi
         for xi in range(w):
             xCoord = x + xi
-            mapData[(yCoord * width) + xCoord] = tile
+            if(mapData[(yCoord * width) + xCoord] == tile):
+                return True
+    return False
+
+def draw_line(tile, x1, y1, x2, y2):
+    inc = [1,1]
+    if x1 == x2:
+        inc[0] = 0
+    if y1 == y2:
+        inc[1] = 0
+    if x1 > x2:
+        inc[0] = -1
+    if y1 > y2:
+        inc[1] = -1
+    while (x1 != x2) and (y1 != y2):
+        print(x1)
+        if(mapData[(y1 * width) + x1] == tile):
+            return True
+        mapData[(y1 * width) + x1] = tile
+        x1 += inc[0]
+        y1 += inc[1]
+    mapData[(y1 * width) + x1] = tile
+    return False
 
 clock = pygame.time.Clock()
 #initialize and prepare screen
@@ -35,7 +57,7 @@ pygame.init()
 screen = pygame.display.set_mode(WINSIZESCALE)
 s = pygame.Surface(WINSIZE)  # the size of your rect
 s2 = pygame.Surface(WINSIZESCALE)
-color = [0xA0E0A0, 0x303030, 0xFFFFFF, 0x00A030]
+color = [0xA0E0A0, 0x303030, 0xFFFFFF, 0xFFFFFF, 0xFFFFFF, 0xFFFFFF, 0x00A030]
 buffer = pygame.PixelArray(s)
 
 mainDone = 0
@@ -43,21 +65,22 @@ while not mainDone:
     for y in range(WINSIZE[0]):
         for x in range(WINSIZE[1]):
             buffer[x, y] = 0
+    # Maps are built in blocks first that represent 4x4 tiles
     #Map size
-    width = rand.randint(15,60) * 2
-    height = rand.randint(15,60) * 2
-    size = (width + 15) * (height + 14)
+    width = rand.randint(8,30)
+    height = rand.randint(8,30)
+    size = ((width * 4) + 15) * ((height * 4) + 14)
     #Enforce maximum size
     while size >= 0x2800:
         if height >= width:
-            height -= 2;
+            height -= 1
         else:
-            width -= 2;
-        size = (width + 15) * (height + 14)
+            width -= 1
+        size = ((width * 4) + 15) * ((height * 4) + 14)
 
 
     #Map type, exits, should be defined beforehand
-    MARGIN_SIZE = 7
+    MARGIN_SIZE = 2
     mapType = rand.randint(0,15)
     exitPos = [0, 0, 0, 0]
     exitSize = [0, 0, 0, 0]
@@ -65,9 +88,9 @@ while not mainDone:
     bit = 1
     for i in range(4):
         if mapType & bit:
-            exitPos[i] = (rand.randint(0, int(mapDim[i] / 2) - MARGIN_SIZE) * 2) + MARGIN_SIZE
-            exitSize[i] = rand.randint(2, 5) * 2
-            if (exitPos[i] + (exitSize[i] - 1)) >= (mapDim[i] - MARGIN_SIZE):
+            exitPos[i] = rand.randint(MARGIN_SIZE, (mapDim[i] - 1) - MARGIN_SIZE)
+            exitSize[i] = rand.randint(1, 4)
+            if (exitPos[i] + (exitSize[i])) >= (mapDim[i] - MARGIN_SIZE):
                 exitPos[i] -= (exitPos[i] + exitSize[i]) - (mapDim[i] - MARGIN_SIZE)
         bit *= 2
     print(f"{width} by {height}")
@@ -120,26 +143,34 @@ while not mainDone:
     pathPoint = []
 
     if exitPos[0] > 0:
-        pathPoint.append([exitPos[0] + int(exitSize[0] / 2), MARGIN_SIZE + 2])
+        pathPoint.append([exitPos[0] + int(exitSize[0] / 2), MARGIN_SIZE])
     if exitPos[1] > 0:
-        pathPoint.append([MARGIN_SIZE + 2, exitPos[1] + int(exitSize[1] / 2)])
+        pathPoint.append([MARGIN_SIZE, exitPos[1] + int(exitSize[1] / 2)])
     if exitPos[2] > 0:
-        pathPoint.append([exitPos[2] + int(exitSize[2] / 2), height - (MARGIN_SIZE + 2)])
+        pathPoint.append([exitPos[2] + int(exitSize[2] / 2), height - (MARGIN_SIZE)])
     if exitPos[3] > 0:
-        pathPoint.append([width - (MARGIN_SIZE+ 2), exitPos[3] + int(exitSize[3] / 2)])
+        pathPoint.append([width - (MARGIN_SIZE), exitPos[3] + int(exitSize[3] / 2)])
+
+    # Create buildings or features that should spawn a path point
 
 
     # Draw the path with the path points
-    for i in pathPoint:
+    for i, point in enumerate(pathPoint):
         dir = rand.randint(0, 1)
-        len = rand.randint(0, abs(pathPointCenter[dir] - i[dir]))
-        xy = [i[0] - 2, i[1] - 2]
-        wh = [4, 4]
-        if(pathPointCenter[dir] < i[dir]):
-            len = -(len + 4)
-            xy[dir] += 4
-        wh[dir] += len 
-        fill_rect(2, xy[0], xy[1], wh[0], wh[1])
+        while (point[0] != pathPointCenter[0]) or (point[1] != pathPointCenter[1]):
+            if(abs(pathPointCenter[dir] - point[dir]) >= 16):
+                len = rand.randint(8, abs(pathPointCenter[dir] - point[dir]))
+            else:
+                len = abs(pathPointCenter[dir] - point[dir])
+            xy = [point[0], point[1]]
+            xy2 = xy
+            if(pathPointCenter[dir] < point[dir]):
+                len = -len
+            xy2[dir] += len 
+            point[dir] += len
+            if(draw_line(2, xy[0], xy[1], xy2[0], xy2[1])):
+                point = pathPointCenter
+            dir ^= 1
 
 
     # Draw
