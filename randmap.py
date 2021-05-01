@@ -1,5 +1,7 @@
 #!/usr/bin/python3
 
+#TODO: entity path can overwrite other entities
+
 import random as rand
 import os, sys, math, pygame
 from pygame.locals import *
@@ -27,9 +29,10 @@ def check_rect(tile, x, y, w, h):
         yCoord = y + yi
         for xi in range(w):
             xCoord = x + xi
-            if(mapData[(yCoord * width) + xCoord] == tile):
-                return True
-    return False
+            if(mapData[(yCoord * width) + xCoord] != tile):
+                if(mapData[(yCoord * width) + xCoord]):
+                    return False
+    return True
 
 def draw_line(tile, x1, y1, x2, y2):
     count = 0
@@ -58,13 +61,32 @@ def draw_line(tile, x1, y1, x2, y2):
         return True
     return False
 
+def process_path(dir, point, destPoint):
+    while (point[0] != destPoint[0]) or (point[1] != destPoint[1]):
+        if(abs(destPoint[dir] - point[dir]) > 4):
+            len = rand.randint(4, abs(destPoint[dir] - point[dir]))
+        else:
+            len = abs(destPoint[dir] - point[dir])
+        if(len == 0):
+            dir ^= 1
+            len = abs(destPoint[dir] - point[dir])
+        xy = [point[0], point[1]]
+        xy2 = [point[0], point[1]]
+        if(destPoint[dir] < point[dir]):
+            len = -len
+        xy2[dir] += len 
+        point[dir] += len
+        if(draw_line(2, xy[0], xy[1], xy2[0], xy2[1])):
+            point = destPoint
+        dir ^= 1
+
 clock = pygame.time.Clock()
 #initialize and prepare screen
 pygame.init()
 screen = pygame.display.set_mode(WINSIZESCALE)
 s = pygame.Surface(WINSIZE)  # the size of your rect
 s2 = pygame.Surface(WINSIZESCALE)
-color = [0xA0E0A0, 0x303030, 0xFFFFFF, 0xFFFFFF, 0xFFFFFF, 0xFFFFFF, 0x00A030]
+color = [0xA0E0A0, 0x303030, 0xFFFFFF, 0x00A030, 0xFF0000, 0x0000FF]
 buffer = pygame.PixelArray(s)
 
 mainDone = 0
@@ -100,7 +122,6 @@ while not mainDone:
             if (exitPos[i] + (exitSize[i])) >= (mapDim[i] - MARGIN_SIZE):
                 exitPos[i] -= (exitPos[i] + exitSize[i]) - (mapDim[i] - MARGIN_SIZE)
         bit *= 2
-    print(f"{width} by {height}")
 
 
     # Create a bare map template
@@ -149,46 +170,74 @@ while not mainDone:
     pathPointCenter = [int(width / 2), int(height / 2)]
     pathPoint = []
     firstDir = []
+    xyAvg = [0, 0]
+    points = 0
 
     if exitPos[0] > 0:
         pathPoint.append([exitPos[0] + int(exitSize[0] / 2), MARGIN_SIZE])
         firstDir.append(1)
+        xyAvg[0] -= pathPoint[points][0]
+        xyAvg[1] -= pathPoint[points][1]
+        points += 1
     if exitPos[1] > 0:
         pathPoint.append([MARGIN_SIZE, exitPos[1] + int(exitSize[1] / 2)])
         firstDir.append(0)
+        xyAvg[0] -= pathPoint[points][0]
+        xyAvg[1] -= pathPoint[points][1]
+        points += 1
     if exitPos[2] > 0:
         pathPoint.append([exitPos[2] + int(exitSize[2] / 2), height - (MARGIN_SIZE + 1)])
         firstDir.append(1)
+        xyAvg[0] -= pathPoint[points][0]
+        xyAvg[1] -= pathPoint[points][1]
+        points += 1
     if exitPos[3] > 0:
         pathPoint.append([width - (MARGIN_SIZE + 1), exitPos[3] + int(exitSize[3] / 2)])
         firstDir.append(0)
+        xyAvg[0] -= pathPoint[points][0]
+        xyAvg[1] -= pathPoint[points][1]
+        points += 1
+    if(points):
+        xyAvg[0] = int(xyAvg[0] / points) - 1
+        xyAvg[1] = int(xyAvg[1] / points) - 1
+        if(xyAvg[0] < MARGIN_SIZE):
+            xyAvg[0] += width
+        if(xyAvg[1] < MARGIN_SIZE):
+            xyAvg[1] += height
+        pathPointCenter = [xyAvg[0], xyAvg[1]]
+    # Adjust the center point so there's less blank space
 
-    # Create buildings or features that should spawn a path point
-
+    # Create buildings or entities that should spawn a path point
+    entity = [4, 5]
+    entityPos = []
 
     # Draw the path with the path points
     for i, point in enumerate(pathPoint):
-        dir = firstDir[i]
-        while (point[0] != pathPointCenter[0]) or (point[1] != pathPointCenter[1]):
-            if(abs(pathPointCenter[dir] - point[dir]) >= 2):
-                len = rand.randint(1, abs(pathPointCenter[dir] - point[dir]))
-            else:
-                len = abs(pathPointCenter[dir] - point[dir])
-            if(len == 0):
-                dir ^= 1
-                len = abs(pathPointCenter[dir] - point[dir])
-            xy = [point[0], point[1]]
-            xy2 = [point[0], point[1]]
-            if(pathPointCenter[dir] < point[dir]):
-                len = -len
-            xy2[dir] += len 
-            point[dir] += len
-            if(draw_line(2, xy[0], xy[1], xy2[0], xy2[1])):
-                point = pathPointCenter
-            dir ^= 1
+        process_path(firstDir[i], point, pathPointCenter)
     mapData[(pathPointCenter[1] * width) + pathPointCenter[0]] = 2
 
 
+    # Find space for the entities
+    for i, obj in enumerate(entity):
+        entityPos.append([0,0])
+        xy = [0,0]
+        while entityPos[i] == [0,0]:
+            xy[0] = rand.randint(MARGIN_SIZE, (width - 1) - MARGIN_SIZE)
+            xy[1] = rand.randint(MARGIN_SIZE, (height - 2) - MARGIN_SIZE)
+            if(xy[0] == pathPointCenter[0]):
+                xy[0] += 1
+            if(xy[1] == pathPointCenter[1]):
+                xy[1] += 1
+            if(check_rect(0, xy[0], xy[1], 1, 1)):
+                if(check_rect(2, xy[0], xy[1] + 1, 1, 1)):
+                    entityPos[i] = [xy[0], xy[1]]
+        
+    for i, point in enumerate(entityPos):
+        mapData[(point[1] * width) + point[0]] = entity[i]
+        point[1] += 1
+        process_path(0, point, pathPointCenter)
+
+    
     # Draw
     for y in range(height):
         for x in range(width):
