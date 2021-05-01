@@ -32,6 +32,7 @@ def check_rect(tile, x, y, w, h):
     return False
 
 def draw_line(tile, x1, y1, x2, y2):
+    count = 0
     inc = [1,1]
     if x1 == x2:
         inc[0] = 0
@@ -41,14 +42,20 @@ def draw_line(tile, x1, y1, x2, y2):
         inc[0] = -1
     if y1 > y2:
         inc[1] = -1
-    while (x1 != x2) and (y1 != y2):
-        print(x1)
+    while (x1 != x2) or (y1 != y2):
         if(mapData[(y1 * width) + x1] == tile):
             return True
         mapData[(y1 * width) + x1] = tile
+        if(count):
+            if(mapData[((y1 + inc[0]) * width) + (x1 + inc[1])] == tile):
+                return True
+            if(mapData[((y1 - inc[0]) * width) + (x1 - inc[1])] == tile):
+                return True
         x1 += inc[0]
         y1 += inc[1]
-    mapData[(y1 * width) + x1] = tile
+        count += 1
+    if(mapData[(y1 * width) + x1] == tile):
+        return True
     return False
 
 clock = pygame.time.Clock()
@@ -141,29 +148,37 @@ while not mainDone:
     # Create one near each exit, and one near the center
     pathPointCenter = [int(width / 2), int(height / 2)]
     pathPoint = []
+    firstDir = []
 
     if exitPos[0] > 0:
         pathPoint.append([exitPos[0] + int(exitSize[0] / 2), MARGIN_SIZE])
+        firstDir.append(1)
     if exitPos[1] > 0:
         pathPoint.append([MARGIN_SIZE, exitPos[1] + int(exitSize[1] / 2)])
+        firstDir.append(0)
     if exitPos[2] > 0:
-        pathPoint.append([exitPos[2] + int(exitSize[2] / 2), height - (MARGIN_SIZE)])
+        pathPoint.append([exitPos[2] + int(exitSize[2] / 2), height - (MARGIN_SIZE + 1)])
+        firstDir.append(1)
     if exitPos[3] > 0:
-        pathPoint.append([width - (MARGIN_SIZE), exitPos[3] + int(exitSize[3] / 2)])
+        pathPoint.append([width - (MARGIN_SIZE + 1), exitPos[3] + int(exitSize[3] / 2)])
+        firstDir.append(0)
 
     # Create buildings or features that should spawn a path point
 
 
     # Draw the path with the path points
     for i, point in enumerate(pathPoint):
-        dir = rand.randint(0, 1)
+        dir = firstDir[i]
         while (point[0] != pathPointCenter[0]) or (point[1] != pathPointCenter[1]):
-            if(abs(pathPointCenter[dir] - point[dir]) >= 16):
-                len = rand.randint(8, abs(pathPointCenter[dir] - point[dir]))
+            if(abs(pathPointCenter[dir] - point[dir]) >= 2):
+                len = rand.randint(1, abs(pathPointCenter[dir] - point[dir]))
             else:
                 len = abs(pathPointCenter[dir] - point[dir])
+            if(len == 0):
+                dir ^= 1
+                len = abs(pathPointCenter[dir] - point[dir])
             xy = [point[0], point[1]]
-            xy2 = xy
+            xy2 = [point[0], point[1]]
             if(pathPointCenter[dir] < point[dir]):
                 len = -len
             xy2[dir] += len 
@@ -171,6 +186,7 @@ while not mainDone:
             if(draw_line(2, xy[0], xy[1], xy2[0], xy2[1])):
                 point = pathPointCenter
             dir ^= 1
+    mapData[(pathPointCenter[1] * width) + pathPointCenter[0]] = 2
 
 
     # Draw
