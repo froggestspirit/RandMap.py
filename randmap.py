@@ -1,19 +1,37 @@
 #!/usr/bin/python3
 
-import os, sys, math, pygame
+'''
+Overview/Notes: Generates a random sized map, and exit placement. Each block will represent 4x4 tiles in-game.
+Using the positionings of the exits, a "center" point will be determined, where all paths from the exits will try to meet up there
+Paths will stop if they intersect with another path that's been drawn.
+Any entities that must be in the map (for example Pokemon Centers or Marts) will be randomly placed, and have a path created as well.
+Since there are potential issues of entities paths overwriting the entity that was previously made, the map will be flagged as a bad map.
+Any other issues that could arise during generation that would be an issue for the map, but take more time to fix or workaround can be flagged as a bad map.
+
+After entities and paths are made, other items (trees, water, etc) can be placed. The idea is that these things can be placed anywhere (besides the path and margins)
+and the player will still be able to access all areas needed.
+
+When starting a new game, every map (town, city, route, etc) will have a seed assigned to it, which will be stored in the save.
+This way, at new game, the generation code can take the time to run through each seed, make sure it's not a bad map, or regenerate if it is.
+When the save is created, every map should have a "good map" seed it can use to generate the same map everytime it is visited
+'''
+
+import pygame
 from pygame.locals import *
 
 WINSIZE = [30, 30]
 WINSIZESCALE = [960, 960]
 seed = 0
-MAX_REROLLS = 10
+MAX_REROLLS = 10 #RNG can sometimes get stuck (especially on entity placement). Give up if this number of re-rolls is reached, and mark the map "bad"
 debug = False
 
+# Set debug = True for the dprint items to show
 def dprint(string):
     global debug
     if(debug):
         print(string)
 
+# Psuedo Random number generator, using the same formula as the Gen 3/4 games
 def rand(a, b):
     global seed
     seed = ((0x41C64E6D * seed) + 0x00006073) & 0xFFFFFFFF
@@ -21,15 +39,17 @@ def rand(a, b):
         return ((seed >> 16) % ((a - b) + 1)) + b
     return ((seed >> 16) % ((b - a) + 1)) + a
 
+# Input handling (space to generate a new map, or esc/close to exit)
 def read_input():
     for e in pygame.event.get():
         if e.type == QUIT or (e.type == KEYUP and e.key == K_ESCAPE):
             buffer.close()
-            sys.exit()
-        if (e.type == KEYUP and e.key == K_LEFT):
+            quit()
+        if (e.type == KEYUP and e.key == K_SPACE):
             return True
             break
 
+# Check if a rectangle is free of tiles that are not tile, or 0
 def check_rect(tile, x, y, w, h):
     if x + w < x:
         x = x + w
@@ -46,6 +66,7 @@ def check_rect(tile, x, y, w, h):
                     return False
     return True
 
+# Fill a rectangle with tile
 def fill_rect(tile, x, y, w, h):
     if x + w < x:
         x = x + w
@@ -60,6 +81,7 @@ def fill_rect(tile, x, y, w, h):
             if(not mapData[(yCoord * width) + xCoord]):
                 mapData[(yCoord * width) + xCoord] = tile
 
+# Draw a line of tiles (this expects either a horizantal or vertical line, not diagonal)
 def draw_line(tile, x1, y1, x2, y2):
     count = 0
     inc = [1,1]
@@ -91,14 +113,16 @@ def draw_line(tile, x1, y1, x2, y2):
         return True
     return False
 
+# Handle drawing the paths
 def process_path(dir, point, destPoint):
+    PATH_LINEARITY = 4 # Paths will move a minimum of this number of tiles before turning (unless it's destination is closer)
     while (point[0] != destPoint[0]) or (point[1] != destPoint[1]):
         dprint("Process path")
-        if(abs(destPoint[dir] - point[dir]) > 4):
-            len = rand(4, abs(destPoint[dir] - point[dir]))
+        if(abs(destPoint[dir] - point[dir]) > PATH_LINEARITY):
+            len = rand(PATH_LINEARITY, abs(destPoint[dir] - point[dir]))
         else:
             len = abs(destPoint[dir] - point[dir])
-        if(len == 0):
+        if(len == 0): # If len is 0, that means the path is aligned on one axis, so switch to the opposite axis and finish the path
             dir ^= 1
             len = abs(destPoint[dir] - point[dir])
         xy = [point[0], point[1]]
@@ -111,28 +135,31 @@ def process_path(dir, point, destPoint):
             point = destPoint
         dir ^= 1
 
+
+# Main entry point of code
+print("\nPress space to generate a new map")
 clock = pygame.time.Clock()
 #initialize and prepare screen
 pygame.init()
 screen = pygame.display.set_mode(WINSIZESCALE)
-s = pygame.Surface(WINSIZE)  # the size of your rect
+s = pygame.Surface(WINSIZE)
 s2 = pygame.Surface(WINSIZESCALE)
-color = [0xA0E0A0, 0x303030, 0xFFFFFF, 0x00A030, 0xFF0000, 0x0000FF]
 buffer = pygame.PixelArray(s)
 
+color = [0xA0E0A0, 0x303030, 0xFFFFFF, 0x00A030, 0xFF0000, 0x0000FF]
 mainDone = 0
 while not mainDone:
-    print(seed)
+    print(f"Seed: {seed}")
     badMap = False
     for y in range(WINSIZE[0]):
         for x in range(WINSIZE[1]):
             buffer[x, y] = 0
     # Maps are built in blocks first that represent 4x4 tiles
-    #Map size
+    # Map size
     width = rand(8,30)
     height = rand(8,30)
     size = ((width * 4) + 15) * ((height * 4) + 14)
-    #Enforce maximum size
+    # Enforce maximum size (In-game RAM limit)
     while size >= 0x2800:
         dprint("Re-roll size")
         if height >= width:
@@ -142,7 +169,7 @@ while not mainDone:
         size = ((width * 4) + 15) * ((height * 4) + 14)
 
 
-    #Map type, exits, should be defined beforehand
+    # Map type, exits, should be defined beforehand, but here they are randomly generated for example's sake
     MARGIN_SIZE = 2
     mapType = rand(0,15)
     exitPos = [0, 0, 0, 0]
@@ -162,7 +189,7 @@ while not mainDone:
     mapData = []
     for y in range(height):
         for x in range(width):
-            #Get location type corners will be borders, margins may vary, center has no border
+            # Get location type corners will be borders, margins may vary, center has no border
             locType = 0
             if y >= MARGIN_SIZE:
                 locType += 3
@@ -231,6 +258,8 @@ while not mainDone:
         xyAvg[0] -= pathPoint[points][0]
         xyAvg[1] -= pathPoint[points][1]
         points += 1
+
+    # Adjust the center point so there's less blank space
     if(points):
         xyAvg[0] = int(xyAvg[0] / points) - 1
         xyAvg[1] = int(xyAvg[1] / points) - 1
@@ -239,10 +268,10 @@ while not mainDone:
         if(xyAvg[1] < MARGIN_SIZE):
             xyAvg[1] += height
         pathPointCenter = [xyAvg[0], xyAvg[1]]
-    # Adjust the center point so there's less blank space
+
 
     # Create buildings or entities that should spawn a path point
-    entity = [4, 5]
+    entity = [4, 5] # Example Pokemon Center, then Mart
     entityPos = []
 
     # Draw the path with the path points
@@ -257,7 +286,7 @@ while not mainDone:
         xy = [0,0]
         rerolls = 0
         while entityPos[i] == [0,0]:
-            if(rerolls > MAX_REROLLS):
+            if(rerolls > MAX_REROLLS): # Too many re-rolls, abort
                 entityPos[i] = [1,1]
                 badMap = True
             else:
@@ -269,17 +298,18 @@ while not mainDone:
                     xy[0] += 1
                 if(xy[1] == pathPointCenter[1]):
                     xy[1] += 1
-                if(check_rect(0, xy[0], xy[1] - 1, 1, 2)):
-                    if(check_rect(2, xy[0], xy[1] + 1, 1, 1)):
+                if(check_rect(0, xy[0], xy[1] - 1, 1, 2)): # Make sure the area the entity is placed is clear, and the tile above it
+                    if(check_rect(2, xy[0], xy[1] + 1, 1, 1)): # Do a separate check for the tile below the entity, alowing paths, since they are good to lead up to buildings
                         entityPos[i] = [xy[0], xy[1]]
                         mapData[(xy[1] * width) + xy[0]] = obj
-        
+    
+    # Create paths for the entities
     for i, point in enumerate(entityPos):
         point[1] += 1
         process_path(0, point, pathPointCenter)
 
     
-    # Draw
+    # Draw tiles to the main buffer
     for y in range(height):
         for x in range(width):
             buffer[x, y] = color[mapData[(y * width) + x]]
@@ -294,5 +324,5 @@ while not mainDone:
         screen.blit(s2,(0,0))
         pygame.display.update()
         done = read_input()
-        if(not badMap):
+        if(badMap): # Automatically skip a bad map and generate a new one
             done = 1
