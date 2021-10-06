@@ -15,42 +15,46 @@ When starting a new game, every map (town, city, route, etc) will have a seed as
 This way, at new game, the generation code can take the time to run through each seed, make sure it's not a bad map, or regenerate if it is.
 When the save is created, every map should have a "good map" seed it can use to generate the same map everytime it is visited
 '''
-
+import sys
 import pygame
 from pygame.locals import *
 
-WINSIZE = [30, 30]
-WINSIZESCALE = [960, 960]
+WINSIZE = (30, 30)
+WINSIZESCALE = (960, 960)
 seed = 0
-MAX_REROLLS = 10 #RNG can sometimes get stuck (especially on entity placement). Give up if this number of re-rolls is reached, and mark the map "bad"
-debug = False
+mapType = None
+MAX_REROLLS = 10  # RNG can sometimes get stuck (especially on entity placement). Give up if this number of re-rolls is reached, and mark the map "bad"
+debug = True
+badMap = False
 
-# Set debug = True for the dprint items to show
-def dprint(string):
+if len(sys.argv) > 1:
+    seed = int(sys.argv[1])
+if len(sys.argv) == 3:
+    mapType = int(sys.argv[2])
+def dprint(string):  # Set debug = True for the dprint items to show
     global debug
     if(debug):
         print(string)
 
-# Psuedo Random number generator, using the same formula as the Gen 3/4 games
-def rand(a, b):
+
+def rand(a, b):  # Psuedo Random number generator, using the same formula as the Gen 3/4 games
     global seed
     seed = ((0x41C64E6D * seed) + 0x00006073) & 0xFFFFFFFF
     if(a > b):
         return ((seed >> 16) % ((a - b) + 1)) + b
     return ((seed >> 16) % ((b - a) + 1)) + a
 
-# Input handling (space to generate a new map, or esc/close to exit)
-def read_input():
+
+def read_input():  # Input handling (space to generate a new map, or esc/close to exit)
     for e in pygame.event.get():
         if e.type == QUIT or (e.type == KEYUP and e.key == K_ESCAPE):
             buffer.close()
             quit()
         if (e.type == KEYUP and e.key == K_SPACE):
             return True
-            break
 
-# Check if a rectangle is free of tiles that are not tile, or 0
-def check_rect(tile, x, y, w, h):
+
+def check_rect(tile, x, y, w, h):  # Check if a rectangle is free of tiles that are not tile, or 0
     if x + w < x:
         x = x + w
         w = abs(w)
@@ -66,8 +70,8 @@ def check_rect(tile, x, y, w, h):
                     return False
     return True
 
-# Fill a rectangle with tile
-def fill_rect(tile, x, y, w, h):
+
+def fill_rect(tile, x, y, w, h):  # Fill a rectangle with tile
     if x + w < x:
         x = x + w
         w = abs(w)
@@ -81,23 +85,23 @@ def fill_rect(tile, x, y, w, h):
             if(not mapData[(yCoord * width) + xCoord]):
                 mapData[(yCoord * width) + xCoord] = tile
 
-# Draw a line of tiles (this expects either a horizantal or vertical line, not diagonal)
-def draw_line(tile, x1, y1, x2, y2):
+
+def draw_line(tile, x1, y1, x2, y2):  # Draw a line of tiles (this expects either a horizantal/vertical line, not diagonal)
+    global badMap
     count = 0
-    inc = [1,1]
-    if x1 == x2:
-        inc[0] = 0
-    if y1 == y2:
-        inc[1] = 0
+    inc = [0,0]
+    if x1 < x2:
+        inc[0] = 1
+    if y1 < y2:
+        inc[1] = 1
     if x1 > x2:
         inc[0] = -1
     if y1 > y2:
         inc[1] = -1
     while (x1 != x2) or (y1 != y2):
-        dprint("Draw path")
         if(mapData[(y1 * width) + x1] == tile):
             return True
-        if(mapData[(y1 * width) + x1] >= 4):
+        if(mapData[(y1 * width) + x1] >= 4):  # drew a path over an entity
             badMap = True
             return True
         mapData[(y1 * width) + x1] = tile
@@ -113,26 +117,27 @@ def draw_line(tile, x1, y1, x2, y2):
         return True
     return False
 
-# Handle drawing the paths
-def process_path(dir, point, destPoint):
+
+def process_path(dir, point, destPoint):  # Handle drawing the paths
     PATH_LINEARITY = 4 # Paths will move a minimum of this number of tiles before turning (unless it's destination is closer)
+    dprint(f"Starting path {point} to {destPoint} starting {dir}")
     while (point[0] != destPoint[0]) or (point[1] != destPoint[1]):
-        dprint("Process path")
         if(abs(destPoint[dir] - point[dir]) > PATH_LINEARITY):
             len = rand(PATH_LINEARITY, abs(destPoint[dir] - point[dir]))
+            dprint(f"Rand call, len: {len}")
         else:
             len = abs(destPoint[dir] - point[dir])
-        if(len == 0): # If len is 0, that means the path is aligned on one axis, so switch to the opposite axis and finish the path
-            dir ^= 1
-            len = abs(destPoint[dir] - point[dir])
-        xy = [point[0], point[1]]
-        xy2 = [point[0], point[1]]
-        if(destPoint[dir] < point[dir]):
-            len = -len
-        xy2[dir] += len 
-        point[dir] += len
-        if(draw_line(2, xy[0], xy[1], xy2[0], xy2[1])):
-            point = destPoint
+        if(len):
+            xy = [point[0], point[1]]
+            xy2 = [point[0], point[1]]
+            if(destPoint[dir] < point[dir]):
+                len = -len
+            xy2[dir] += len 
+            point[dir] += len
+            if(draw_line(2, xy[0], xy[1], xy2[0], xy2[1])):
+                point[0] = destPoint[0]
+                point[1] = destPoint[1]
+            dprint(f"Path point {point}")
         dir ^= 1
 
 
@@ -149,7 +154,10 @@ buffer = pygame.PixelArray(s)
 color = [0xA0E0A0, 0x303030, 0xFFFFFF, 0x00A030, 0xFF0000, 0x0000FF]
 mainDone = 0
 while not mainDone:
-    print(f"Seed: {seed}")
+    if badMap:
+        seed = (backupSeed + 1) & 0xFFFFFFFF
+    backupSeed = seed
+    print(f"Seed: {hex(seed)}")
     badMap = False
     for y in range(WINSIZE[0]):
         for x in range(WINSIZE[1]):
@@ -168,10 +176,10 @@ while not mainDone:
             width -= 1
         size = ((width * 4) + 15) * ((height * 4) + 14)
 
-
     # Map type, exits, should be defined beforehand, but here they are randomly generated for example's sake
     MARGIN_SIZE = 2
-    mapType = rand(0,15)
+    if mapType is None:
+        mapType = rand(0,15)
     exitPos = [0, 0, 0, 0]
     exitSize = [0, 0, 0, 0]
     mapDim = [width, height, width, height]
@@ -183,7 +191,6 @@ while not mainDone:
             if (exitPos[i] + (exitSize[i])) >= (mapDim[i] - MARGIN_SIZE):
                 exitPos[i] -= (exitPos[i] + exitSize[i]) - (mapDim[i] - MARGIN_SIZE)
         bit *= 2
-
 
     # Create a bare map template
     mapData = []
@@ -225,7 +232,6 @@ while not mainDone:
                 else:
                     mapData.append(1)
 
-
     # Set focal points for the path
     # Create one near each exit, and one near the center
     pathPointCenter = [int(width / 2), int(height / 2)]
@@ -239,24 +245,28 @@ while not mainDone:
         firstDir.append(1)
         xyAvg[0] -= pathPoint[points][0]
         xyAvg[1] -= pathPoint[points][1]
+        print(pathPoint[points])
         points += 1
     if exitPos[1] > 0:
         pathPoint.append([MARGIN_SIZE, exitPos[1] + int(exitSize[1] / 2)])
         firstDir.append(0)
         xyAvg[0] -= pathPoint[points][0]
         xyAvg[1] -= pathPoint[points][1]
+        print(pathPoint[points])
         points += 1
     if exitPos[2] > 0:
         pathPoint.append([exitPos[2] + int(exitSize[2] / 2), height - (MARGIN_SIZE + 1)])
         firstDir.append(1)
         xyAvg[0] -= pathPoint[points][0]
         xyAvg[1] -= pathPoint[points][1]
+        print(pathPoint[points])
         points += 1
     if exitPos[3] > 0:
         pathPoint.append([width - (MARGIN_SIZE + 1), exitPos[3] + int(exitSize[3] / 2)])
         firstDir.append(0)
         xyAvg[0] -= pathPoint[points][0]
         xyAvg[1] -= pathPoint[points][1]
+        print(pathPoint[points])
         points += 1
 
     # Adjust the center point so there's less blank space
@@ -268,7 +278,7 @@ while not mainDone:
         if(xyAvg[1] < MARGIN_SIZE):
             xyAvg[1] += height
         pathPointCenter = [xyAvg[0], xyAvg[1]]
-
+        print(pathPointCenter)
 
     # Create buildings or entities that should spawn a path point
     entity = [4, 5] # Example Pokemon Center, then Mart
@@ -276,9 +286,14 @@ while not mainDone:
 
     # Draw the path with the path points
     for i, point in enumerate(pathPoint):
+        print(f"ProcessPath{i}: {hex(seed)}")
         process_path(firstDir[i], point, pathPointCenter)
     mapData[(pathPointCenter[1] * width) + pathPointCenter[0]] = 2
 
+    # If the generator detects something is wrong with the map, it will be flagged, so it can be disregarded in new game creation
+    if(badMap):
+        print("Bad Map")
+        continue    
 
     # Find space for the entities
     for i, obj in enumerate(entity):
@@ -303,22 +318,29 @@ while not mainDone:
                         entityPos[i] = [xy[0], xy[1]]
                         mapData[(xy[1] * width) + xy[0]] = obj
     
+    # If the generator detects something is wrong with the map, it will be flagged, so it can be disregarded in new game creation
+    if(badMap):
+        print("Bad Map")
+        continue
+
     # Create paths for the entities
     for i, point in enumerate(entityPos):
         point[1] += 1
         process_path(0, point, pathPointCenter)
-
     
+    # If the generator detects something is wrong with the map, it will be flagged, so it can be disregarded in new game creation
+    if(badMap):
+        print("Bad Map")
+        continue
+
     # Draw tiles to the main buffer
     for y in range(height):
         for x in range(width):
             buffer[x, y] = color[mapData[(y * width) + x]]
 
-    # If the generator detects something is wrong with the map, it will be flagged, so it can be disregarded in new game creation
-    if(badMap):
-        print("Bad Map")
     # Main loop
     done = 0
+    print(f"EndingSeed: {hex(seed)}")
     while not done:
         pygame.transform.scale(s, WINSIZESCALE, s2)
         screen.blit(s2,(0,0))
@@ -326,3 +348,4 @@ while not mainDone:
         done = read_input()
         if(badMap): # Automatically skip a bad map and generate a new one
             done = 1
+            
